@@ -5,3 +5,6 @@
 # psql Commands
 `psql -U postgres -d local_records`
 `\dt`
+
+## Notes
+- may need https://ngrok.com/ for oauth on localhost

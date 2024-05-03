@@ -2,6 +2,8 @@ import express, { NextFunction, Request, Response } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
+// @ts-ignore
+// import { Client, OAuthCallbackAuth } from "disconnect";
 import { Pool } from "pg";
 
 const app = express();
@@ -48,6 +50,41 @@ app.post("/api/addToFavorites", async (req: Request, res: Response, next: NextFu
     await pool.query("INSERT INTO favorite_item (user_id, item_id) VALUES (1, $1)", [item_id]);
     console.log(`req to add ${item_id} to favorites`);
     res.status(201).json({ message: "added to favorites" });
+});
+
+var Discogs = require('disconnect').Client;
+app.get("/api/testDis", async (req: Request, res: Response, next: NextFunction) => {
+    var db = new Discogs().database();
+    try {
+        const data = await db.getRelease(176126);
+        res.json(data);
+    } catch (err) {
+        console.log(err);
+    }
+});
+
+// this is redirecting in Postman, 
+// but getting a CORS error in the browser
+// code for this package is at https://github.com/bartve/disconnect
+// https://github.com/vivster7/myRecs/blob/46d05f582584f2aea7414ea00b49c345f1245e37/server.js#L21
+app.get('/api/authorize', async (req: Request, res: Response, next: NextFunction) => {
+    console.log('hit');
+
+    try {
+        var oAuth = await new Discogs().oauth();
+
+        return await oAuth.getRequestToken(
+            process.env.CONSUMER_KEY, 
+            process.env.CONSUMER_SECRET, 
+            'http://127.0.0.1:8000/api/callback',
+            async (err: any, requestData: any) => {
+                // setCookie('requestData', requestData);
+                res.redirect(requestData.authorizeUrl);
+            }
+        );
+      } catch (err) {
+        res.send(err);
+      }
 });
   
 app.listen(process.env.PORT, () => {
