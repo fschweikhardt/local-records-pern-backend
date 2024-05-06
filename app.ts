@@ -2,7 +2,8 @@ import express, { NextFunction, Request, Response } from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
-import { Pool } from "pg";
+import pg from "pg";
+import Postgrator from "postgrator";
 
 const app = express();
 app.use(cors());
@@ -10,7 +11,7 @@ app.use(helmet());
 app.use(express.json()); 
 dotenv.config();
 
-const pool = new Pool({
+const pool = new pg.Pool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     database: process.env.DB_NAME,
@@ -18,22 +19,58 @@ const pool = new Pool({
     port: parseInt(process.env.DB_PORT || "")
 });
 
-const setupDB = async () => {
+const dbSeed = async () => {
     try {
-        await pool.connect();
-        await pool.query("CREATE TABLE IF NOT EXISTS user_table (id SERIAL PRIMARY KEY, name VARCHAR(100) UNIQUE, password VARCHAR(100))");
         const setupUser = await pool.query("SELECT * FROM user_table WHERE name='test_user'");
         if (setupUser.rows.length === 0) {
             await pool.query("INSERT INTO user_table (name, password) VALUES ('test_user', 'test_password')");
+            console.log("Created test user on user_table");
+        } else {
+            console.error("Something went wrong; seed data should already be complete in dbSeed");
         }
-        await pool.query("CREATE TABLE IF NOT EXISTS favorite_item (id SERIAL PRIMARY KEY, user_id INT, item_id BIGINT)");
     } catch (err) {
-        console.log(err);
+        console.error(err);
     }
 };
 
-setupDB();
+const dbMigration = async () => {
+    const client = new pg.Client({
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+        database: process.env.DB_NAME,
+        password: process.env.DB_PASSWORD,
+        port: parseInt(process.env.DB_PORT || "")
+    });
+    await client.connect();
 
+    try {
+        const dbSetupCheck = await client.query("SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename  = 'user_table');");
+        if (dbSetupCheck.rows[0].exists) {
+            console.log("Database is already setup");
+            return;
+        } else {
+            console.log("Database is not setup");
+            const postgrator = new Postgrator({
+                migrationPattern: "migrations/*",
+                driver: "pg",
+                database: process.env.DB_NAME,
+                execQuery: (query) => client.query(query),
+            });
+            await postgrator.migrate();
+            console.log("Tables user_tables & favorite_item created");
+            await client.end();
+        
+            dbSeed();
+        } 
+    } catch (err) {
+        console.error("Error on dbMigration: ", err);
+    } 
+}
+
+// Start server, create and seed tables
+dbMigration();
+
+// API routes
 app.get("/api/test", (req: Request, res: Response, next: NextFunction) => {
     res.json({ message: "hello world" });
 });
